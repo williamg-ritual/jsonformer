@@ -106,7 +106,6 @@ class Jsonformer:
 
     def generate_string(self) -> str:
         prompt = self.get_prompt() + '"Begin your response here.'
-        prompt = "What is the capital of France?"
         print("\n\n\n~~~~~~~~~~~~~~~~~ PROMPT SENT TO JSONFORMER:\n")
         print(prompt)
         print("\n~~~~~~~~~~~~~~~~~ END PROMPT\n")
