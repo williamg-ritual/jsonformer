@@ -105,20 +105,37 @@ class Jsonformer:
     def generate_string(self) -> str:
         prompt = self.get_prompt() + '"'
         self.debug("[generate_string]", prompt, is_prompt=True)
-        input_tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(
+        input_tokens = self.tokenizer.encode(prompt).to(
             self.model.device
         )
 
-        response = self.model.generate(
-            input_tokens,
-            max_new_tokens=self.max_string_token_length,
-            num_return_sequences=1,
-            temperature=self.temperature,
-            stopping_criteria=[
-                StringStoppingCriteria(self.tokenizer, len(input_tokens[0]))
-            ],
-            pad_token_id=self.tokenizer.eos_token_id,
-        )
+        with crypten.no_grad():
+            for _ in range(self.max_string_token_length):
+                one_hot_input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float()
+                if device == "cuda":
+                    one_hot_input_ids = one_hot_input_ids.cuda()
+                one_hot_input_ids = crypten.cryptensor(one_hot_input_ids)
+                # one_hot_input_ids = encrypt_tensor(one_hot_input_ids)
+                encrypted_logits = self.model(one_hot_input_ids).logits
+                logits: torch.tensor = encrypted_logits.get_plain_text()[0][-1]
+                generated_token = torch.argmax(logits).item()
+                input_ids.append(generated_token)
+
+                if generated_token == tokenizer.eos_token_id or '"' in self.tokenizer.decode(generated_token, skip_special_tokens=True):
+                    break
+
+        '''
+            response = self.model.generate(
+                input_tokens,
+                max_new_tokens=self.max_string_token_length,
+                num_return_sequences=1,
+                temperature=self.temperature,
+                stopping_criteria=[
+                    StringStoppingCriteria(self.tokenizer, len(input_tokens[0]))
+                ],
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+        '''
 
         # Some models output the prompt as part of the response
         # This removes the prompt from the response if it is present
