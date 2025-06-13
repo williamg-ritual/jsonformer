@@ -8,6 +8,8 @@ from jsonformer.logits_processors import (
 from termcolor import cprint
 from transformers import PreTrainedModel, PreTrainedTokenizer
 import json
+import crypten
+import torch
 
 GENERATION_MARKER = "|GENERATION|"
 
@@ -103,39 +105,65 @@ class Jsonformer:
         return result.item()
 
     def generate_string(self) -> str:
-        prompt = self.get_prompt() + '"'
+        prompt = self.get_prompt() + '"Begin your response here.'
+        prompt = "What is the capital of France?"
+        print("\n\n\n~~~~~~~~~~~~~~~~~ PROMPT SENT TO JSONFORMER:\n")
+        print(prompt)
+        print("\n~~~~~~~~~~~~~~~~~ END PROMPT\n")
         self.debug("[generate_string]", prompt, is_prompt=True)
-        input_tokens = self.tokenizer.encode(prompt).to(
-            self.model.device
-        )
+        input_tokens = self.tokenizer.encode(prompt)
+        input_tokens_copy = input_tokens.copy()
+        #input_tokens = self.tokenizer.encode(prompt, return_tensors="pt").to("cuda")
 
+        
+
+        
         with crypten.no_grad():
             for _ in range(self.max_string_token_length):
-                one_hot_input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float()
-                if device == "cuda":
-                    one_hot_input_ids = one_hot_input_ids.cuda()
+                one_hot_input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float().cuda()
+                #if device == "cuda":
+                #    one_hot_input_ids = one_hot_input_ids.cuda()
                 one_hot_input_ids = crypten.cryptensor(one_hot_input_ids)
                 # one_hot_input_ids = encrypt_tensor(one_hot_input_ids)
                 encrypted_logits = self.model(one_hot_input_ids).logits
                 logits: torch.tensor = encrypted_logits.get_plain_text()[0][-1]
+                #print(logits)
+                
                 generated_token = torch.argmax(logits).item()
-                input_ids.append(generated_token)
+                #print(generated_token)
+                input_tokens.append(generated_token)
 
-                if generated_token == tokenizer.eos_token_id or '"' in self.tokenizer.decode(generated_token, skip_special_tokens=True):
+                print(self.tokenizer.decode(generated_token, skip_special_tokens=True))
+                if generated_token == self.tokenizer.eos_token_id or '"' in self.tokenizer.decode(generated_token, skip_special_tokens=True):
                     break
 
+        response = input_tokens
+        print("********")
+        print("TOKENS INPUTTED:\n", input_tokens_copy, "\n\n")
+        print("TOKENS OUTPUTTED:\n", response, "\n\n")
+        print("PROMPT INPUTTED:\n", self.tokenizer.decode(input_tokens_copy, skip_special_tokens=True), "\n\n")
+        print("RESPONSE OUTPUTTED:\n", self.tokenizer.decode(response, skip_special_tokens=True), "\n\n")
+        if (
+            len(response) >= len(input_tokens_copy)
+            and (torch.tensor(response[: len(input_tokens_copy)]) == torch.tensor(input_tokens_copy)).all()
+        ):
+            response = response[len(input_tokens_copy) :]
+        print("TOKENS FOR RESULTING RESPONSE IN CORRESPONDING FIELD:\n", response, "\n\n")
+        response = self.tokenizer.decode(response, skip_special_tokens=True)
+        
+
         '''
-            response = self.model.generate(
-                input_tokens,
-                max_new_tokens=self.max_string_token_length,
-                num_return_sequences=1,
-                temperature=self.temperature,
-                stopping_criteria=[
-                    StringStoppingCriteria(self.tokenizer, len(input_tokens[0]))
-                ],
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
-        '''
+        response = self.model.generate(
+            input_tokens,
+            max_new_tokens=self.max_string_token_length,
+            num_return_sequences=1,
+            temperature=self.temperature,
+            stopping_criteria=[
+                StringStoppingCriteria(self.tokenizer, len(input_tokens[0]))
+            ],
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+        
 
         # Some models output the prompt as part of the response
         # This removes the prompt from the response if it is present
@@ -146,8 +174,9 @@ class Jsonformer:
             response = response[0][len(input_tokens[0]) :]
         if response.shape[0] == 1:
             response = response[0]
-
-        response = self.tokenizer.decode(response, skip_special_tokens=True)
+        '''
+        print("RESULTING RESPONSE IN CORRESPONDING FIELD:\n", response, "\n\n")
+        print("********")
 
         self.debug("[generate_string]", "|" + response + "|")
 
