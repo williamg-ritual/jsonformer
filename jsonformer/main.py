@@ -105,8 +105,7 @@ class Jsonformer:
         return result.item()
 
     def generate_string(self) -> str:
-        prompt = self.get_prompt() + '"Begin your response here.'
-        prompt = "What is the capital of France?"
+        prompt = self.get_prompt() + '"'
         print("\n\n\n~~~~~~~~~~~~~~~~~ PROMPT SENT TO JSONFORMER:\n")
         print(prompt)
         print("\n~~~~~~~~~~~~~~~~~ END PROMPT\n")
@@ -133,7 +132,7 @@ class Jsonformer:
                 #print(generated_token)
                 input_tokens.append(generated_token)
 
-                print(self.tokenizer.decode(generated_token, skip_special_tokens=True))
+                #print(self.tokenizer.decode(generated_token, skip_special_tokens=True))
                 if generated_token == self.tokenizer.eos_token_id or '"' in self.tokenizer.decode(generated_token, skip_special_tokens=True):
                     break
 
