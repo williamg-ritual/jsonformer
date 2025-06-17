@@ -54,6 +54,7 @@ class Jsonformer:
                 cprint(caller, "green", end=" ")
                 cprint(value, "blue")
 
+    '''
     def generate_number(self, temperature: Union[float, None] = None, iterations=0):
         prompt = self.get_prompt()
         self.debug("[generate_number]", prompt, is_prompt=True)
@@ -103,79 +104,37 @@ class Jsonformer:
         self.debug("[generate_boolean]", result)
 
         return result.item()
+    '''
 
     def generate_string(self) -> str:
         prompt = self.get_prompt() + '"'
-        print("\n\n\n~~~~~~~~~~~~~~~~~ PROMPT SENT TO JSONFORMER:\n")
-        print(prompt)
-        print("\n~~~~~~~~~~~~~~~~~ END PROMPT\n")
         self.debug("[generate_string]", prompt, is_prompt=True)
         input_tokens = self.tokenizer.encode(prompt)
-        input_tokens_copy = input_tokens.copy()
-        #input_tokens = self.tokenizer.encode(prompt, return_tensors="pt").to("cuda")
-
-        
-
+        unmodified_input_tokens = input_tokens.copy()
         
         with crypten.no_grad():
             for _ in range(self.max_string_token_length):
-                one_hot_input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float().cuda()
-                #if device == "cuda":
-                #    one_hot_input_ids = one_hot_input_ids.cuda()
+                one_hot_input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float()
+                if next(self.model.parameters()).is_cuda:
+                    one_hot_input_ids = one_hot_input_ids.cuda()
                 one_hot_input_ids = crypten.cryptensor(one_hot_input_ids)
                 # one_hot_input_ids = encrypt_tensor(one_hot_input_ids)
                 encrypted_logits = self.model(one_hot_input_ids).logits
                 logits: torch.tensor = encrypted_logits.get_plain_text()[0][-1]
-                #print(logits)
                 
                 generated_token = torch.argmax(logits).item()
-                #print(generated_token)
                 input_tokens.append(generated_token)
 
-                #print(self.tokenizer.decode(generated_token, skip_special_tokens=True))
                 if generated_token == self.tokenizer.eos_token_id or '"' in self.tokenizer.decode(generated_token, skip_special_tokens=True):
                     break
 
         response = input_tokens
-        print("********")
-        print("TOKENS INPUTTED:\n", input_tokens_copy, "\n\n")
-        print("TOKENS OUTPUTTED:\n", response, "\n\n")
-        print("PROMPT INPUTTED:\n", self.tokenizer.decode(input_tokens_copy, skip_special_tokens=True), "\n\n")
-        print("RESPONSE OUTPUTTED:\n", self.tokenizer.decode(response, skip_special_tokens=True), "\n\n")
         if (
-            len(response) >= len(input_tokens_copy)
-            and (torch.tensor(response[: len(input_tokens_copy)]) == torch.tensor(input_tokens_copy)).all()
+            len(response) >= len(unmodified_input_tokens)
+            and (torch.tensor(response[: len(unmodified_input_tokens)]) == torch.tensor(unmodified_input_tokens)).all()
         ):
-            response = response[len(input_tokens_copy) :]
-        print("TOKENS FOR RESULTING RESPONSE IN CORRESPONDING FIELD:\n", response, "\n\n")
+            response = response[len(unmodified_input_tokens) :]
         response = self.tokenizer.decode(response, skip_special_tokens=True)
-        
-
-        '''
-        response = self.model.generate(
-            input_tokens,
-            max_new_tokens=self.max_string_token_length,
-            num_return_sequences=1,
-            temperature=self.temperature,
-            stopping_criteria=[
-                StringStoppingCriteria(self.tokenizer, len(input_tokens[0]))
-            ],
-            pad_token_id=self.tokenizer.eos_token_id,
-        )
-        
-
-        # Some models output the prompt as part of the response
-        # This removes the prompt from the response if it is present
-        if (
-            len(response[0]) >= len(input_tokens[0])
-            and (response[0][: len(input_tokens[0])] == input_tokens).all()
-        ):
-            response = response[0][len(input_tokens[0]) :]
-        if response.shape[0] == 1:
-            response = response[0]
-        '''
-        print("RESULTING RESPONSE IN CORRESPONDING FIELD:\n", response, "\n\n")
-        print("********")
 
         self.debug("[generate_string]", "|" + response + "|")
 
@@ -199,7 +158,16 @@ class Jsonformer:
         key: Union[str, None] = None,
     ) -> Any:
         schema_type = schema["type"]
-        if schema_type == "number":
+        if schema_type == "string":
+            if key:
+                obj[key] = self.generation_marker
+            else:
+                obj.append(self.generation_marker)
+            return self.generate_string()
+        else:
+            raise ValueError(f"Unsupported schema type: {schema_type}")
+        '''
+        elif schema_type == "number":
             if key:
                 obj[key] = self.generation_marker
             else:
@@ -211,12 +179,6 @@ class Jsonformer:
             else:
                 obj.append(self.generation_marker)
             return self.generate_boolean()
-        elif schema_type == "string":
-            if key:
-                obj[key] = self.generation_marker
-            else:
-                obj.append(self.generation_marker)
-            return self.generate_string()
         elif schema_type == "array":
             new_array = []
             obj[key] = new_array
@@ -228,8 +190,8 @@ class Jsonformer:
             else:
                 obj.append(new_obj)
             return self.generate_object(schema["properties"], new_obj)
-        else:
-            raise ValueError(f"Unsupported schema type: {schema_type}")
+        '''
+        
 
     def generate_array(self, item_schema: Dict[str, Any], obj: Dict[str, Any]) -> list:
         for _ in range(self.max_array_length):
