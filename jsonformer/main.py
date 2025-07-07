@@ -29,6 +29,7 @@ class Jsonformer:
         max_number_tokens: int = 6,
         temperature: float = 1.0,
         max_string_token_length: int = 10,
+        vanilla: bool = False
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -44,6 +45,8 @@ class Jsonformer:
         self.max_number_tokens = max_number_tokens
         self.temperature = temperature
         self.max_string_token_length = max_string_token_length
+
+        self.vanilla = vanilla
 
     def debug(self, caller: str, value: str, is_prompt: bool = False):
         if self.debug_on:
@@ -112,15 +115,22 @@ class Jsonformer:
         input_tokens = self.tokenizer.encode(prompt)
         unmodified_input_tokens = input_tokens.copy()
         
-        with crypten.no_grad():
+        cm = torch.no_grad() if self.vanilla else crypten.no_grad()
+        with cm:
             for _ in range(self.max_string_token_length):
-                one_hot_input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float()
-                if next(self.model.parameters()).is_cuda:
-                    one_hot_input_ids = one_hot_input_ids.cuda()
-                one_hot_input_ids = crypten.cryptensor(one_hot_input_ids)
-                # one_hot_input_ids = encrypt_tensor(one_hot_input_ids)
-                encrypted_logits = self.model(one_hot_input_ids).logits
-                logits: torch.tensor = encrypted_logits.get_plain_text()[0][-1]
+                if self.vanilla:
+                    input_ids = torch.tensor([input_tokens], device=self.model.device)
+                else:
+                    input_ids = torch.nn.functional.one_hot(torch.tensor([input_tokens]), num_classes=len(self.tokenizer)).float()
+                    if next(self.model.parameters()).is_cuda:
+                        input_ids = input_ids.cuda()
+                    input_ids = crypten.cryptensor(input_ids)
+
+                logits = self.model(input_ids).logits
+                if self.vanilla:
+                    logits: torch.tensor = logits[0][-1]
+                else:
+                    logits: torch.tensor = logits.get_plain_text()[0][-1]
                 
                 generated_token = torch.argmax(logits).item()
                 input_tokens.append(generated_token)
